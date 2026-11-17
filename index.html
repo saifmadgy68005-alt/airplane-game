@@ -1,0 +1,595 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>SKY FORCE</title>
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;background:#07152b;color:white;
+ font-family:Arial,sans-serif;overflow:hidden;
+ touch-action:none;user-select:none;
+}
+#game{
+ width:100vw;height:100dvh;display:block;
+ image-rendering:pixelated;
+}
+#hud{
+ position:absolute;top:12px;left:10px;right:10px;
+ display:flex;justify-content:space-between;
+ font-weight:bold;font-size:13px;
+ text-shadow:2px 2px #000;
+ pointer-events:none;
+}
+#view{
+ position:absolute;top:48px;right:10px;
+ padding:9px 12px;border:1px solid #9ccaff;
+ background:#102d53;color:white;border-radius:7px;
+ font-weight:bold;
+}
+#controls{
+ position:absolute;bottom:20px;left:15px;right:15px;
+ display:flex;justify-content:space-between;align-items:end;
+ pointer-events:none;
+}
+.pad{
+ display:grid;grid-template-columns:48px 48px 48px;
+ grid-template-rows:48px 48px 48px;gap:3px;
+ pointer-events:auto;
+}
+.ctrl{
+ border:1px solid #9ccaff88;
+ border-radius:9px;background:#174b85cc;
+ color:white;font-size:23px;font-weight:bold;
+ touch-action:none;
+}
+.up{grid-column:2;grid-row:1}
+.left{grid-column:1;grid-row:2}
+.down{grid-column:2;grid-row:3}
+.right{grid-column:3;grid-row:2}
+.actions{
+ display:flex;flex-direction:column;gap:12px;
+ pointer-events:auto;
+}
+.fire{
+ width:72px;height:72px;border-radius:50%;
+ background:#c83936dd;border:3px solid #ff9c7c;
+ font-size:15px;color:white;font-weight:bold;
+}
+#startScreen{
+ position:absolute;inset:0;background:#06152beF;
+ display:flex;align-items:center;justify-content:center;
+ text-align:center;padding:20px;
+}
+.panel{
+ background:#102c50;border:2px solid #55c9ff;
+ border-radius:16px;padding:25px 18px;
+ width:min(340px,95%);
+}
+.panel h1{color:#69dcff;font-size:30px}
+.panel p{line-height:1.6;color:#d5e9ff}
+#start{
+ background:#16a9df;color:white;border:0;
+ padding:14px 35px;border-radius:9px;
+ font-size:18px;font-weight:bold;
+}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<div id="hud">
+ <span>⭐ SCORE: <b id="score">000000</b></span>
+ <span>❤️ <b id="health">100</b>%</span>
+ <span>⛽ <b id="fuel">100</b>%</span>
+</div>
+
+<button id="view">VIEW: TOP</button>
+
+<div id="controls">
+ <div class="pad">
+  <button class="ctrl up" data-dir="up">▲</button>
+  <button class="ctrl left" data-dir="left">◀</button>
+  <button class="ctrl down" data-dir="down">▼</button>
+  <button class="ctrl right" data-dir="right">▶</button>
+ </div>
+ <div class="actions">
+  <button class="fire" id="fire">FIRE</button>
+ </div>
+</div>
+
+<div id="startScreen">
+ <div class="panel">
+  <h1>✈ SKY FORCE</h1>
+  <p>
+   PIXEL ART FLIGHT SIMULATOR<br>
+   Explore the ocean, fly your fighter<br>
+   and defeat enemy aircraft!
+  </p>
+  <button id="start">START MISSION</button>
+ </div>
+</div>
+
+<script>
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+
+const scoreUI=document.getElementById("score");
+const healthUI=document.getElementById("health");
+const fuelUI=document.getElementById("fuel");
+
+const W=320,H=568;
+canvas.width=W;
+canvas.height=H;
+
+let running=false;
+let score=0,health=100,fuel=100;
+let frame=0,view=0;
+let keys={};
+let bullets=[],enemies=[],stars=[],explosions=[];
+let cameraX=0,cameraY=0;
+
+const plane={
+ x:160,y:430,
+ speed:2.7
+};
+
+const viewNames=[
+ "TOP","CHASE","COCKPIT","LANDSCAPE"
+];
+
+function rand(n){
+ return Math.floor(Math.random()*n);
+}
+
+function colorOcean(){
+ ctx.fillStyle="#087db5";
+ ctx.fillRect(0,0,W,H);
+
+ for(let i=0;i<85;i++){
+  let x=(i*47+frame*.35)%W;
+  let y=(i*83+frame*1.2)%H;
+  ctx.fillStyle=i%2?"#1599c9":"#36b5d5";
+  ctx.fillRect(x,y,7,2);
+ }
+}
+
+function drawIsland(x,y,s){
+ ctx.fillStyle="#12613e";
+ ctx.fillRect(x-s,y-s*.6,s*2,s*1.2);
+
+ ctx.fillStyle="#25864a";
+ ctx.fillRect(x-s+5,y-s*.6+5,s*2-10,s*1.2-10);
+
+ ctx.fillStyle="#c8c17a";
+ ctx.fillRect(x-s,y-s*.6,s*2,4);
+ ctx.fillRect(x-s,y+s*.6-4,s*2,4);
+
+ for(let i=0;i<12;i++){
+  let tx=x+rand(s*2)-s;
+  let ty=y+rand(s)-s*.5;
+  ctx.fillStyle=i%2?"#17633c":"#358d43";
+  ctx.fillRect(tx,ty,5,5);
+ }
+}
+
+function drawTop(){
+ colorOcean();
+
+ drawIsland(75,(180+frame*.45)%760-80,65);
+ drawIsland(255,(480+frame*.45)%760-80,42);
+ drawIsland(130,(730+frame*.45)%760-80,55);
+
+ // clouds
+ for(let i=0;i<5;i++){
+  let x=(i*85+frame*.4)%370-25;
+  let y=(i*130+frame*.3)%600;
+  ctx.fillStyle="#ffffffaa";
+  ctx.fillRect(x,y,22,6);
+  ctx.fillRect(x+5,y-5,13,6);
+ }
+
+ drawEnemiesTop();
+ drawBulletsTop();
+ drawPlaneTop();
+}
+
+function drawPlaneTop(){
+ ctx.save();
+ ctx.translate(plane.x,plane.y);
+ ctx.fillStyle="#c9d6e4";
+ ctx.strokeStyle="#273b58";
+ ctx.lineWidth=2;
+
+ ctx.beginPath();
+ ctx.moveTo(0,-22);
+ ctx.lineTo(9,5);
+ ctx.lineTo(27,15);
+ ctx.lineTo(27,20);
+ ctx.lineTo(6,14);
+ ctx.lineTo(5,25);
+ ctx.lineTo(-5,25);
+ ctx.lineTo(-6,14);
+ ctx.lineTo(-27,20);
+ ctx.lineTo(-27,15);
+ ctx.lineTo(-9,5);
+ ctx.closePath();
+ ctx.fill();ctx.stroke();
+
+ ctx.fillStyle="#34bfff";
+ ctx.fillRect(-3,-10,6,12);
+ ctx.fillStyle="#ff9e34";
+ ctx.fillRect(-5,23,4,7);
+ ctx.fillRect(2,23,4,7);
+ ctx.restore();
+}
+
+function drawEnemiesTop(){
+ enemies.forEach(e=>{
+  ctx.fillStyle="#ed4c48";
+  ctx.fillRect(e.x-9,e.y-3,18,7);
+  ctx.fillRect(e.x-3,e.y-10,6,18);
+  ctx.fillStyle="#ffb34e";
+  ctx.fillRect(e.x-3,e.y-2,6,4);
+ });
+}
+
+function drawBulletsTop(){
+ ctx.fillStyle="#ffe66d";
+ bullets.forEach(b=>{
+  ctx.fillRect(b.x-2,b.y-7,4,9);
+ });
+}
+
+function drawChase(){
+ // sky
+ let sky=ctx.createLinearGradient(0,0,0,300);
+ sky.addColorStop(0,"#f68a6b");
+ sky.addColorStop(.5,"#ffcc8b");
+ sky.addColorStop(1,"#65c9e9");
+ ctx.fillStyle=sky;
+ ctx.fillRect(0,0,W,300);
+
+ // sun
+ ctx.fillStyle="#ffe28c";
+ ctx.fillRect(220,105,25,25);
+
+ // clouds
+ for(let i=0;i<9;i++){
+  let x=(i*43+frame*.6)%370-25;
+  let y=155+(i%3)*24;
+  ctx.fillStyle="#d9f3ff";
+  ctx.fillRect(x,y,35,7);
+  ctx.fillRect(x+7,y-6,19,7);
+ }
+
+ ctx.fillStyle="#086aa6";
+ ctx.fillRect(0,250,W,318);
+
+ for(let i=0;i<65;i++){
+  ctx.fillStyle=i%2?"#168fc0":"#32b4d3";
+  let x=(i*51+frame*1.5)%W;
+  let y=270+(i*37)%290;
+  ctx.fillRect(x,y,10,2);
+ }
+
+ drawEnemiesChase();
+ drawBulletsChase();
+
+ // player aircraft from behind
+ ctx.fillStyle="#d5e1ee";
+ ctx.beginPath();
+ ctx.moveTo(160,310);
+ ctx.lineTo(180,350);
+ ctx.lineTo(250,380);
+ ctx.lineTo(250,390);
+ ctx.lineTo(170,372);
+ ctx.lineTo(170,414);
+ ctx.lineTo(150,414);
+ ctx.lineTo(150,372);
+ ctx.lineTo(70,390);
+ ctx.lineTo(70,380);
+ ctx.lineTo(140,350);
+ ctx.closePath();
+ ctx.fill();
+
+ ctx.fillStyle="#ff9a32";
+ ctx.fillRect(135,410,12,18);
+ ctx.fillRect(174,410,12,18);
+}
+
+function drawEnemiesChase(){
+ enemies.forEach(e=>{
+  ctx.fillStyle="#e84c47";
+  ctx.fillRect(e.x-12,e.y,24,5);
+  ctx.fillRect(e.x-4,e.y-7,8,14);
+ });
+}
+
+function drawBulletsChase(){
+ ctx.fillStyle="#ffe66d";
+ bullets.forEach(b=>{
+  ctx.fillRect(b.x,b.y,3,10);
+ });
+}
+
+function drawCockpit(){
+ let sky=ctx.createLinearGradient(0,0,0,390);
+ sky.addColorStop(0,"#348bd7");
+ sky.addColorStop(1,"#9be4ed");
+ ctx.fillStyle=sky;
+ ctx.fillRect(0,0,W,H);
+
+ // clouds
+ for(let i=0;i<10;i++){
+  let x=(i*42+frame*.4)%360-20;
+  let y=120+(i%4)*38;
+  ctx.fillStyle="#f3ffff";
+  ctx.fillRect(x,y,35,7);
+  ctx.fillRect(x+7,y-6,20,7);
+ }
+
+ // ocean horizon
+ ctx.fillStyle="#087cae";
+ ctx.fillRect(0,280,W,100);
+
+ // cockpit frame
+ ctx.fillStyle="#101c30";
+ ctx.beginPath();
+ ctx.moveTo(0,568);
+ ctx.lineTo(0,470);
+ ctx.lineTo(75,420);
+ ctx.lineTo(245,420);
+ ctx.lineTo(320,470);
+ ctx.lineTo(320,568);
+ ctx.fill();
+
+ ctx.fillStyle="#193c39";
+ ctx.fillRect(24,466,76,60);
+ ctx.fillRect(220,466,76,60);
+
+ ctx.strokeStyle="#46ff72";
+ ctx.lineWidth=2;
+ ctx.strokeRect(30,472,64,48);
+ ctx.strokeRect(226,472,64,48);
+
+ // radar
+ ctx.fillStyle="#051c20";
+ ctx.beginPath();
+ ctx.arc(160,500,30,0,Math.PI*2);
+ ctx.fill();
+
+ ctx.strokeStyle="#35ff78";
+ ctx.beginPath();
+ ctx.arc(160,500,25,0,Math.PI*2);
+ ctx.moveTo(135,500);ctx.lineTo(185,500);
+ ctx.moveTo(160,475);ctx.lineTo(160,525);
+ ctx.stroke();
+
+ ctx.fillStyle="#ff4545";
+ ctx.fillRect(165,490,4,4);
+ ctx.fillStyle="#52ff8a";
+ ctx.fillRect(157,497,5,5);
+
+ ctx.fillStyle="#60ff82";
+ ctx.font="bold 11px monospace";
+ ctx.fillText("SPEED 620",32,488);
+ ctx.fillText("ALT 3420",232,488);
+ ctx.fillText("RADAR",143,545);
+}
+
+function drawLandscape(){
+ ctx.fillStyle="#75c9f4";
+ ctx.fillRect(0,0,W,H);
+
+ // distant mountains
+ for(let i=0;i<9;i++){
+  let x=(i*50-frame*.5)%420-50;
+  ctx.fillStyle="#547d9a";
+  ctx.beginPath();
+  ctx.moveTo(x,330);
+  ctx.lineTo(x+25,200+(i%3)*35);
+  ctx.lineTo(x+55,330);
+  ctx.fill();
+
+  ctx.fillStyle="#f3f6ee";
+  ctx.beginPath();
+  ctx.moveTo(x+17,240+(i%3)*35);
+  ctx.lineTo(x+25,200+(i%3)*35);
+  ctx.lineTo(x+34,240+(i%3)*35);
+  ctx.fill();
+ }
+
+ ctx.fillStyle="#087eb0";
+ ctx.fillRect(0,330,W,238);
+
+ ctx.fillStyle="#247b42";
+ ctx.fillRect(0,365,W,30);
+
+ for(let i=0;i<18;i++){
+  let x=(i*27-frame*1.5)%350-20;
+  ctx.fillStyle=i%2?"#246b3d":"#32964c";
+  ctx.fillRect(x,345,15,18);
+ }
+
+ // plane side
+ ctx.fillStyle="#d7e1eb";
+ ctx.beginPath();
+ ctx.moveTo(95,275);
+ ctx.lineTo(175,265);
+ ctx.lineTo(215,280);
+ ctx.lineTo(177,287);
+ ctx.lineTo(145,305);
+ ctx.lineTo(136,302);
+ ctx.lineTo(145,285);
+ ctx.lineTo(95,285);
+ ctx.fill();
+
+ ctx.fillStyle="#ff982e";
+ ctx.fillRect(88,278,12,6);
+
+ drawEnemiesChase();
+}
+
+function drawRadar(){
+ ctx.fillStyle="#061e24";
+ ctx.beginPath();
+ ctx.arc(42,90,28,0,Math.PI*2);
+ ctx.fill();
+
+ ctx.strokeStyle="#42ed77";
+ ctx.lineWidth=1;
+ ctx.beginPath();
+ ctx.arc(42,90,25,0,Math.PI*2);
+ ctx.moveTo(17,90);ctx.lineTo(67,90);
+ ctx.moveTo(42,65);ctx.lineTo(42,115);
+ ctx.stroke();
+
+ ctx.fillStyle="white";
+ ctx.fillRect(39,84,6,12);
+
+ enemies.forEach(e=>{
+  ctx.fillStyle="#ff4242";
+  ctx.fillRect(42+(e.x-160)*.16,90+(e.y-250)*.08,4,4);
+ });
+}
+
+function update(){
+ if(!running)return;
+
+ frame++;
+
+ if(keys.left)plane.x-=plane.speed;
+ if(keys.right)plane.x+=plane.speed;
+ if(keys.up)plane.y-=plane.speed;
+ if(keys.down)plane.y+=plane.speed;
+
+ plane.x=Math.max(25,Math.min(W-25,plane.x));
+ plane.y=Math.max(90,Math.min(H-35,plane.y));
+
+ if(frame%100===0){
+  enemies.push({
+   x:25+rand(W-50),y:-20,speed:1+Math.random()*1.5
+  });
+ }
+
+ enemies.forEach(e=>{
+  e.y+=e.speed;
+ });
+
+ enemies=enemies.filter(e=>e.y<H+30);
+
+ if(keys.fire && frame%12===0){
+  bullets.push({x:plane.x,y:plane.y-20});
+ }
+
+ bullets.forEach(b=>b.y-=6);
+ bullets=bullets.filter(b=>b.y>-10);
+
+ for(let i=enemies.length-1;i>=0;i--){
+  for(let j=bullets.length-1;j>=0;j--){
+   let e=enemies[i],b=bullets[j];
+   if(Math.abs(e.x-b.x)<15&&Math.abs(e.y-b.y)<15){
+    explosions.push({x:e.x,y:e.y,t:0});
+    enemies.splice(i,1);
+    bullets.splice(j,1);
+    score+=100;
+    break;
+   }
+  }
+ }
+
+ enemies.forEach(e=>{
+  if(Math.abs(e.x-plane.x)<18&&Math.abs(e.y-plane.y)<20){
+   e.y=H+100;
+   health=Math.max(0,health-15);
+  }
+ });
+
+ explosions.forEach(e=>e.t++);
+ explosions=explosions.filter(e=>e.t<12);
+
+ if(frame%180===0)fuel=Math.max(0,fuel-1);
+ if(health<=0||fuel<=0)endGame();
+
+ scoreUI.textContent=String(score).padStart(6,"0");
+ healthUI.textContent=health;
+ fuelUI.textContent=fuel;
+}
+
+function draw(){
+ ctx.clearRect(0,0,W,H);
+
+ if(view===0)drawTop();
+ if(view===1)drawChase();
+ if(view===2)drawCockpit();
+ if(view===3)drawLandscape();
+
+ drawRadar();
+
+ explosions.forEach(e=>{
+  ctx.fillStyle=e.t%2?"#ffdc48":"#ff692e";
+  ctx.fillRect(e.x-7-e.t/2,e.y-7-e.t/2,14+e.t,14+e.t);
+ });
+}
+
+function loop(){
+ if(!running)return;
+ update();
+ draw();
+ requestAnimationFrame(loop);
+}
+
+function startGame(){
+ score=0;health=100;fuel=100;frame=0;
+ bullets=[];enemies=[];explosions=[];
+ plane.x=160;plane.y=430;
+ running=true;
+ document.getElementById("startScreen").classList.add("hidden");
+ loop();
+}
+
+function endGame(){
+ running=false;
+ document.querySelector("#startScreen h1").textContent="MISSION OVER";
+ document.querySelector("#startScreen p").innerHTML=
+ "FINAL SCORE: "+score+"<br>TRY AGAIN, PILOT!";
+ document.getElementById("start").textContent="PLAY AGAIN";
+ document.getElementById("startScreen").classList.remove("hidden");
+}
+
+document.getElementById("start").addEventListener("click",startGame);
+
+document.getElementById("view").addEventListener("click",()=>{
+ view=(view+1)%4;
+ document.getElementById("view").textContent="VIEW: "+viewNames[view];
+});
+
+document.querySelectorAll("[data-dir]").forEach(btn=>{
+ let direction=btn.dataset.dir;
+ btn.addEventListener("pointerdown",e=>{
+  e.preventDefault();
+  keys[direction]=true;
+  btn.setPointerCapture(e.pointerId);
+ });
+ ["pointerup","pointercancel","lostpointercapture"].forEach(event=>{
+  btn.addEventListener(event,()=>keys[direction]=false);
+ });
+});
+
+const fireButton=document.getElementById("fire");
+fireButton.addEventListener("pointerdown",e=>{
+ e.preventDefault();keys.fire=true;
+});
+["pointerup","pointercancel","pointerleave"].forEach(event=>{
+ fireButton.addEventListener(event,()=>keys.fire=false);
+});
+
+draw();
+</script>
+</body>
+</html>
